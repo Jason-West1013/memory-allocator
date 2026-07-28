@@ -19,7 +19,7 @@ void *my_malloc(size_t size) {
   if (size == 0) {
     return NULL;
   }
-
+  
   void *current_break = sbrk(0);
 
   uintptr_t addr_padding = (uintptr_t)(-(intptr_t)current_break) & (ALIGNMENT - 1);
