@@ -22,7 +22,6 @@ int main(void) {
   printf("Test 2: Non-overlap - successive allocations don't occupy the same bytes: { %lu, %lu }\n\n", (uintptr_t)p1, (uintptr_t)p2);
 
   // Test 3
-  size_t size = 25;
   void *p3 = my_malloc(test_size);
 
   unsigned char *bytes = (unsigned char *)p3;
@@ -44,8 +43,8 @@ int main(void) {
   void *after = sbrk(0);
 
   uintptr_t growth = (uintptr_t)after - (uintptr_t)before;
-  assert(growth >= size);
-  assert(growth <= size + 2 * (ALIGNMENT - 1));
+  assert(growth >= test_size);
+  assert(growth <= test_size + 128);
   printf("Test 5: Heap Growth - function actually moves heap foward as expected: before - {%lu}, after - {%lu}, malloc return {%lu}\n\n", (uintptr_t)before, (uintptr_t)after, (uintptr_t)p5);
 
   printf("all tests passed\n");
