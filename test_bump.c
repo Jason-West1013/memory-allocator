@@ -93,6 +93,25 @@ int main(void) {
   }
   printf("Test 8 passed\n\n");
 
+  printf("Test 9: Memory coalescing\n");
+  {
+    void *p1 = my_malloc(test_size);
+    void *p2 = my_malloc(test_size);
+    void *p3 = my_malloc(test_size);
+    (void)p3;
+    void *p4 = my_malloc(test_size);
+    void *break_before = sbrk(0);
+    my_free(p4);
+    my_free(p2);
+    my_free(p1);
+    void *p5 = my_malloc(test_size + 15);
+    (void)p5;
+    void *break_after = sbrk(0);
+    assert(break_before == break_after);
+    assert(p5 == p1);
+  }
+  printf("Test 9 passed\n\n");
+
   printf("all tests passed\n");
   return 0;
 }
