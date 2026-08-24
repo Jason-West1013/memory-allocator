@@ -70,7 +70,25 @@ void *my_malloc(size_t size) {
     if (current_header->is_free && current_header->payload_size >= rounded_up_size) {
       struct header *found = current_header;
       found->is_free = false;
-      remove_list_node(found); 
+      remove_list_node(found);
+
+      if (found->payload_size - rounded_up_size >= ALIGNMENT + HEADER_SIZE + FOOTER_SIZE) {
+        size_t unclaimed_payload_size = found->payload_size -rounded_up_size - HEADER_SIZE - FOOTER_SIZE;
+        found->payload_size = rounded_up_size;
+
+        struct footer *claimed_footer = (struct footer *)((char *)found + HEADER_SIZE + rounded_up_size);
+        claimed_footer->payload_size = rounded_up_size;
+
+        struct header *unclaimed_header = (struct header *)((char *)claimed_footer + FOOTER_SIZE);
+        unclaimed_header->is_free = true;
+        unclaimed_header->payload_size = unclaimed_payload_size;
+
+        struct footer *unclaimed_footer = (struct footer *)((char *)unclaimed_header + HEADER_SIZE + unclaimed_header->payload_size);
+        unclaimed_footer->payload_size = unclaimed_payload_size;
+
+        add_head_node(unclaimed_header);
+      }
+
       return (char *)found + HEADER_SIZE;
     }
     current_header = current_header->next;
