@@ -6,6 +6,7 @@
 
 #include "allocator.h"
 
+// TODO: Add process isolation to the tests
 int main(void) {
   size_t test_size = 25;
 
@@ -83,13 +84,17 @@ int main(void) {
   printf("Test 8: Non-trivial ordering\n");
   {
     void *p1 = my_malloc(test_size);
-    (void)p1;
     void *p2 = my_malloc(test_size);
     void *p3 = my_malloc(test_size);
-    (void)p3;
+    void *before = sbrk(0);
     my_free(p2);
     void *p4 = my_malloc(test_size);
-    assert(p2 == p4);
+    void *after = sbrk(0);
+    assert(before == after);
+
+    my_free(p1);
+    my_free(p3);
+    my_free(p4);
   }
   printf("Test 8 passed\n\n");
 
@@ -98,19 +103,35 @@ int main(void) {
     void *p1 = my_malloc(test_size);
     void *p2 = my_malloc(test_size);
     void *p3 = my_malloc(test_size);
-    (void)p3;
     void *p4 = my_malloc(test_size);
     void *break_before = sbrk(0);
     my_free(p4);
     my_free(p2);
     my_free(p1);
     void *p5 = my_malloc(test_size + 15);
-    (void)p5;
     void *break_after = sbrk(0);
     assert(break_before == break_after);
     assert(p5 == p1);
+
+    my_free(p3);
+    my_free(p5);
   }
   printf("Test 9 passed\n\n");
+
+  printf("Test 10: Memory splitting\n");
+  {
+    void *p1 = my_malloc(test_size * 4);
+    my_free(p1);
+    void *break_before = sbrk(0);
+    void *p2 = my_malloc(test_size);
+    void *p3 = my_malloc(test_size);
+    void *break_after = sbrk(0);
+    assert(break_before == break_after);
+    
+    my_free(p2);
+    my_free(p3);
+  }
+  printf("Test 10 passed\n\n");
 
   printf("all tests passed\n");
   return 0;
