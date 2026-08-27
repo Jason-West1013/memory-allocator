@@ -51,7 +51,7 @@ static void remove_list_node(struct header *ptr) {
   }
 }
 
-static bool is_free_block(struct header *header, size_t size) {
+static bool is_valid_free_block(struct header *header, size_t size) {
   return header->is_free && header->payload_size >= size;
 }
 
@@ -63,10 +63,15 @@ struct alloc_params {
 
 static struct alloc_params compute_alloc_params (size_t size) {
   void *current_break = sbrk(0);
+  uintptr_t padding = (uintptr_t)(-(intptr_t)current_break) & (ALIGNMENT - 1);
+
+  if (starting_break == NULL) {
+    starting_break = (char *)current_break + padding;
+  }
 
   return (struct alloc_params) {
     .current_break = current_break,
-    .padding = (uintptr_t)(-(intptr_t)current_break) & (ALIGNMENT - 1),
+    .padding = padding,
     .size = ALIGN_UP(size, ALIGNMENT),
   };
 }
@@ -126,13 +131,9 @@ void *my_malloc(size_t size) {
 
   struct alloc_params params = compute_alloc_params(size);
   
-  if (starting_break == NULL) {
-    starting_break = (char *)params.current_break + params.padding;
-  }
-
   struct header *current_header = free_list_head;
   while (current_header != NULL) {
-    if (is_free_block(current_header, params.size)) {
+    if (is_valid_free_block(current_header, params.size)) {
       return free_list_allocation(current_header, params.size);
     }
     current_header = current_header->next;
@@ -147,8 +148,8 @@ void *my_malloc(size_t size) {
   return block;
 }
 
-static bool is_best_fit_candidate(struct header *candidate, struct header *current) {
-  return current == NULL || current->payload_size > candidate->payload_size;
+static bool is_best_fit_candidate(struct header *candidate, struct header *best_fit) {
+  return best_fit == NULL || best_fit->payload_size > candidate->payload_size;
 }
 
 void *my_malloc_best_fit(size_t size) {
@@ -156,16 +157,12 @@ void *my_malloc_best_fit(size_t size) {
     return NULL;
   }
 
-  struct alloc_params params = compute_alloc_params(size);
-
-  if (starting_break == NULL) {
-    starting_break = (char *)params.current_break + params.padding;
-  }
+  struct alloc_params params = compute_alloc_params(size); 
 
   struct header *best_fit_header = NULL;
   struct header *candidate_header = free_list_head;
   while (candidate_header != NULL) {
-    if (is_free_block(candidate_header, params.size) && is_best_fit_candidate(candidate_header, best_fit_header)) {
+    if (is_valid_free_block(candidate_header, params.size) && is_best_fit_candidate(candidate_header, best_fit_header)) {
       best_fit_header = candidate_header;
     } 
     candidate_header = candidate_header->next;
