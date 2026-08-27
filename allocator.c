@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -50,68 +51,138 @@ static void remove_list_node(struct header *ptr) {
   }
 }
 
-void *my_malloc(size_t size) {
-  if (size == 0) {
-    return NULL;
-  }
-  
+static bool is_free_block(struct header *header, size_t size) {
+  return header->is_free && header->payload_size >= size;
+}
+
+struct alloc_params {
+  void *current_break;
+  uintptr_t padding;
+  uintptr_t size;
+};
+
+static struct alloc_params compute_alloc_params (size_t size) {
   void *current_break = sbrk(0);
 
-  uintptr_t addr_padding = (uintptr_t)(-(intptr_t)current_break) & (ALIGNMENT - 1);
+  return (struct alloc_params) {
+    .current_break = current_break,
+    .padding = (uintptr_t)(-(intptr_t)current_break) & (ALIGNMENT - 1),
+    .size = ALIGN_UP(size, ALIGNMENT),
+  };
+}
 
-  if (starting_break == NULL) {
-    starting_break = (char *)current_break + addr_padding;
+static bool is_splittable_block(size_t payload_size, size_t alloc_size) {
+  return payload_size - alloc_size >= ALIGNMENT + HEADER_SIZE + FOOTER_SIZE; 
+}
+
+static void *free_list_allocation(struct header *found, size_t size) {
+  found->is_free = false;
+  remove_list_node(found);
+
+  if (is_splittable_block(found->payload_size, size)) {
+    size_t unclaimed_payload_size = found->payload_size - size - HEADER_SIZE - FOOTER_SIZE;
+    found->payload_size = size;
+
+    struct footer *claimed_footer = (struct footer *)((char *)found + HEADER_SIZE + size);
+    claimed_footer->payload_size = size;
+
+    struct header *unclaimed_header = (struct header *)((char *)claimed_footer + FOOTER_SIZE);
+    unclaimed_header->is_free = true;
+    unclaimed_header->payload_size = unclaimed_payload_size;
+
+    struct footer *unclaimed_footer = (struct footer *)((char *)unclaimed_header + HEADER_SIZE + unclaimed_header->payload_size);
+    unclaimed_footer->payload_size = unclaimed_payload_size;
+
+    add_head_node(unclaimed_header);
   }
 
-  uintptr_t rounded_up_size = ALIGN_UP(size, ALIGNMENT); 
+  return (char *)found + HEADER_SIZE;
+}
 
-  struct header *current_header = free_list_head;
-  while (current_header != NULL) {
-    if (current_header->is_free && current_header->payload_size >= rounded_up_size) {
-      struct header *found = current_header;
-      found->is_free = false;
-      remove_list_node(found);
-
-      if (found->payload_size - rounded_up_size >= ALIGNMENT + HEADER_SIZE + FOOTER_SIZE) {
-        size_t unclaimed_payload_size = found->payload_size -rounded_up_size - HEADER_SIZE - FOOTER_SIZE;
-        found->payload_size = rounded_up_size;
-
-        struct footer *claimed_footer = (struct footer *)((char *)found + HEADER_SIZE + rounded_up_size);
-        claimed_footer->payload_size = rounded_up_size;
-
-        struct header *unclaimed_header = (struct header *)((char *)claimed_footer + FOOTER_SIZE);
-        unclaimed_header->is_free = true;
-        unclaimed_header->payload_size = unclaimed_payload_size;
-
-        struct footer *unclaimed_footer = (struct footer *)((char *)unclaimed_header + HEADER_SIZE + unclaimed_header->payload_size);
-        unclaimed_footer->payload_size = unclaimed_payload_size;
-
-        add_head_node(unclaimed_header);
-      }
-
-      return (char *)found + HEADER_SIZE;
-    }
-    current_header = current_header->next;
-  }
-
-  uintptr_t total_allocation = addr_padding + rounded_up_size + HEADER_SIZE + FOOTER_SIZE;
+static void *create_block(struct alloc_params params) {
+  uintptr_t total_allocation = params.padding + params.size + HEADER_SIZE + FOOTER_SIZE;
   void *result = sbrk((intptr_t)total_allocation);
 
   if (result == (void *)-1) {
     return NULL;
   } 
 
-  struct header *block_header = (struct header *)((char *)current_break + addr_padding);
-  block_header->payload_size = rounded_up_size;
+  struct header *block_header = (struct header *)((char *)params.current_break + params.padding);
+  block_header->payload_size = params.size;
   block_header->is_free = false;
   block_header->next = NULL;
   block_header->prev = NULL;
 
-  struct footer *block_footer = (struct footer *)((char *)current_break + addr_padding + HEADER_SIZE + rounded_up_size);
-  block_footer->payload_size = rounded_up_size;
+  struct footer *block_footer = (struct footer *)((char *)params.current_break + params.padding + HEADER_SIZE + params.size);
+  block_footer->payload_size = params.size;
 
-  return (char *)current_break + addr_padding + HEADER_SIZE; 
-} 
+  return (char *)params.current_break + params.padding + HEADER_SIZE;
+}
+
+void *my_malloc(size_t size) {
+  if (size == 0) {
+    return NULL;
+  }
+
+  struct alloc_params params = compute_alloc_params(size);
+  
+  if (starting_break == NULL) {
+    starting_break = (char *)params.current_break + params.padding;
+  }
+
+  struct header *current_header = free_list_head;
+  while (current_header != NULL) {
+    if (is_free_block(current_header, params.size)) {
+      return free_list_allocation(current_header, params.size);
+    }
+    current_header = current_header->next;
+  }
+
+  void *block = create_block(params);
+
+  if (block == NULL) {
+    return NULL;
+  }
+
+  return block;
+}
+
+static bool is_best_fit_candidate(struct header *candidate, struct header *current) {
+  return current == NULL || current->payload_size > candidate->payload_size;
+}
+
+void *my_malloc_best_fit(size_t size) {
+  if (size == 0) {
+    return NULL;
+  }
+
+  struct alloc_params params = compute_alloc_params(size);
+
+  if (starting_break == NULL) {
+    starting_break = (char *)params.current_break + params.padding;
+  }
+
+  struct header *best_fit_header = NULL;
+  struct header *candidate_header = free_list_head;
+  while (candidate_header != NULL) {
+    if (is_free_block(candidate_header, params.size) && is_best_fit_candidate(candidate_header, best_fit_header)) {
+      best_fit_header = candidate_header;
+    } 
+    candidate_header = candidate_header->next;
+  }
+
+  if (best_fit_header != NULL) {
+    return free_list_allocation(best_fit_header, params.size);
+  }
+
+  void *block = create_block(params);
+
+  if (block == NULL) {
+    return NULL;
+  }
+
+  return block;
+}
 
 void my_free(void *ptr) { 
   if (ptr == NULL) {
