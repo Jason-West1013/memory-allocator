@@ -124,7 +124,7 @@ static void *create_block(struct alloc_params params) {
   return (char *)params.current_break + params.padding + HEADER_SIZE;
 }
 
-void *my_malloc(size_t size) {
+void *my_malloc_first_fit(size_t size) {
   if (size == 0) {
     return NULL;
   }

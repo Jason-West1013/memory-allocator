@@ -4,7 +4,7 @@
 
 #define ALIGNMENT 16
 
-void *my_malloc(size_t size);
+void *my_malloc_first_fit(size_t size);
 void *my_malloc_best_fit(size_t size);
 void my_free(void *ptr);
 
