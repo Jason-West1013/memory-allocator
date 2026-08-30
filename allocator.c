@@ -80,15 +80,12 @@ static bool is_splittable_block(size_t payload_size, size_t alloc_size) {
   return payload_size - alloc_size >= ALIGNMENT + HEADER_SIZE + FOOTER_SIZE; 
 }
 
-static void *free_list_allocation(struct header *found, size_t size) {
-  found->is_free = false;
-  remove_list_node(found);
+static void *handle_block_reallocation(struct header *ptr, size_t size) {
+  if (is_splittable_block(ptr->payload_size, size)) {
+    size_t unclaimed_payload_size = ptr->payload_size - size - HEADER_SIZE - FOOTER_SIZE;
+    ptr->payload_size = size;
 
-  if (is_splittable_block(found->payload_size, size)) {
-    size_t unclaimed_payload_size = found->payload_size - size - HEADER_SIZE - FOOTER_SIZE;
-    found->payload_size = size;
-
-    struct footer *claimed_footer = (struct footer *)((char *)found + HEADER_SIZE + size);
+    struct footer *claimed_footer = (struct footer *)((char *)ptr + HEADER_SIZE + size);
     claimed_footer->payload_size = size;
 
     struct header *unclaimed_header = (struct header *)((char *)claimed_footer + FOOTER_SIZE);
@@ -101,7 +98,13 @@ static void *free_list_allocation(struct header *found, size_t size) {
     add_head_node(unclaimed_header);
   }
 
-  return (char *)found + HEADER_SIZE;
+  return (char *)ptr + HEADER_SIZE;
+}
+
+static void *free_list_allocation(struct header *found, size_t size) {
+  found->is_free = false;
+  remove_list_node(found);
+  return handle_block_reallocation(found, size);
 }
 
 static void *create_block(struct alloc_params params) {
@@ -220,5 +223,39 @@ void my_free(void *ptr) {
 
   start_header->payload_size = end_footer->payload_size = total_payload_size;
   add_head_node(start_header);
+}
+
+void *my_realloc(void *ptr, size_t size) {
+  if (ptr == NULL) {
+    my_malloc_best_fit(size);
+  }
+
+  if (size == 0) {
+    my_free(ptr);
+    return ptr;
+  }
+
+  struct header *header = (struct header *)((char *)ptr - HEADER_SIZE);
+
+  if (size == header->payload_size) {
+    return ptr;
+  } else if (size < header->payload_size) {
+    return handle_block_reallocation(ptr, size);
+  } else {
+    struct header *next_header = (struct header *)((char *)ptr + header->payload_size + FOOTER_SIZE);
+    size_t total_size_next = next_header->payload_size + HEADER_SIZE + FOOTER_SIZE;
+    size_t additional_size_required = size - header->payload_size;
+
+    if (next_header == sbrk(0)) {
+      // TODO: increase the size of the heap to fit the new size
+    } else if (next_header->is_free && (total_size_next >= additional_size_required)) {
+      // TODO: merge the current ptr with it's neighbor
+    } else if (!next_header->is_free || (next_header->is_free && (total_size_next < additional_size_required))) {
+      // TODO: free the current ptr and allocate a new block
+    }
+  }
+
+  // TODO: Handle growing
+  // TODO: Check to the right to check if it's free. Handle if it's free and big enough, if it's not big enough or not free, if it's end of heap. 
 }
 
