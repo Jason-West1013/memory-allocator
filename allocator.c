@@ -254,8 +254,5 @@ void *my_realloc(void *ptr, size_t size) {
       // TODO: free the current ptr and allocate a new block
     }
   }
-
-  // TODO: Handle growing
-  // TODO: Check to the right to check if it's free. Handle if it's free and big enough, if it's not big enough or not free, if it's end of heap. 
 }
 
